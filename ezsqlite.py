@@ -24,3 +24,4 @@ def sqlite(db, sql_query, *params):
 result = sqlite("example.db", "SELECT * FROM users WHERE username=?", ("user1",))
 for row in result:
     print(row)
+#박은성 쵝오
