@@ -1,0 +1,43 @@
+name: Temporary Social Culture Bundle Build
+
+on:
+  push:
+    branches: [tmp-soc-bundle-20260821]
+    paths:
+      - 'tmp_soc_bundle/**'
+      - '.github/workflows/tmp_soc_bundle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-soc-bundle-20260821
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip requests beautifulsoup4 pymupdf
+      - name: Fetch validate and merge 40 exams
+        run: python tmp_soc_bundle/build_soc_bundle.py
+      - name: Commit completed PDF and validation
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tmp_soc_bundle/output/
+          git commit -m "Build complete KICE society culture bundle" || exit 0
+          git push origin HEAD:tmp-soc-bundle-20260821
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-culture-bundle-output
+          path: tmp_soc_bundle/output/
+          if-no-files-found: warn
