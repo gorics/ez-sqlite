@@ -34,6 +34,7 @@ jobs:
       - name: Run routed symbolic solving benchmark
         env:
           DROSOPHILA_MODEL_DIR: Drosophila_brain_model
+          PYTHONPATH: .
         run: python -u tools/solve_2027_9mo_v6.py
       - name: Print result
         run: cat suneung_symbolic_v6_result.json
