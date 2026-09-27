@@ -1,0 +1,43 @@
+name: Export Fly v783 Data
+
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - '.github/workflows/export-fly-v783-data.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+      - name: Fetch pinned original v783 model
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir upstream
+          cd upstream
+          git init
+          git remote add origin https://github.com/philshiu/Drosophila_brain_model.git
+          git fetch --depth 1 origin 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960
+          git checkout FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "91bdd1e7dcf193f3e7ca5a8933497fcef63b7960"
+          sha256sum Completeness_783.csv Connectivity_783.parquet model.py > SHA256SUMS.txt
+          ls -lh Completeness_783.csv Connectivity_783.parquet model.py SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fly-v783-pinned-original
+          path: |
+            upstream/Completeness_783.csv
+            upstream/Connectivity_783.parquet
+            upstream/model.py
+            upstream/SHA256SUMS.txt
+          compression-level: 1
+          retention-days: 1
