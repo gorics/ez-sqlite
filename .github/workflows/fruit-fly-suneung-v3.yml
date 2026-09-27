@@ -1,0 +1,55 @@
+name: Fruit Fly v783 CSAT Math Training V3
+
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - '.github/workflows/fruit-fly-suneung-v3.yml'
+      - 'tools/train_suneung_math_v3.py'
+      - 'tools/train_suneung_math_v2.py'
+      - 'tools/train_suneung_math.py'
+      - 'tools/run_fly_v783_fullbrain.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  train-suneung-math-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install numpy==1.26.4 scipy==1.13.1 pandas==2.2.3 pyarrow==17.0.0
+      - name: Fetch original published v783 model data
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir Drosophila_brain_model
+          cd Drosophila_brain_model
+          git init
+          git remote add origin https://github.com/philshiu/Drosophila_brain_model.git
+          git fetch --depth 1 origin 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960
+          git checkout FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "91bdd1e7dcf193f3e7ca5a8933497fcef63b7960"
+          echo "UPSTREAM_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Run final CSAT math training
+        env:
+          DROSOPHILA_MODEL_DIR: Drosophila_brain_model
+        run: python -u tools/train_suneung_math_v3.py
+      - name: Print result
+        if: always()
+        run: |
+          if [ -f suneung_math_training_v3_result.json ]; then cat suneung_math_training_v3_result.json; else echo NO_RESULT; fi
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('suneung_math_training_v3_result.json') != ''
+        with:
+          name: fly-v783-suneung-math-training-v3-result
+          path: suneung_math_training_v3_result.json
+          retention-days: 1
