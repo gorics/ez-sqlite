@@ -1,0 +1,57 @@
+name: Fruit Fly v783 Autonomous Computer
+
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - '.github/workflows/fruit-fly-autonomous-computer.yml'
+      - 'tools/run_fly_autonomous_computer.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  autonomous-computer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install numpy==1.26.4 scipy==1.13.1 pandas==2.2.3 pyarrow==17.0.0 requests==2.32.3 beautifulsoup4==4.12.3
+      - name: Fetch original v783 model and data
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir Drosophila_brain_model
+          cd Drosophila_brain_model
+          git init
+          git remote add origin https://github.com/philshiu/Drosophila_brain_model.git
+          git fetch --depth 1 origin 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960
+          git checkout FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "91bdd1e7dcf193f3e7ca5a8933497fcef63b7960"
+          ls -lh Completeness_783.csv Connectivity_783.parquet
+          echo "UPSTREAM_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Train and run autonomous computer controller
+        env:
+          DROSOPHILA_MODEL_DIR: Drosophila_brain_model
+        run: python -u tools/run_fly_autonomous_computer.py
+      - name: Print result
+        if: always()
+        run: |
+          if [ -f fly_autonomous_result.json ]; then cat fly_autonomous_result.json; else echo NO_RESULT; fi
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('fly_autonomous_result.json') != ''
+        with:
+          name: fly-v783-autonomous-computer-result
+          path: |
+            fly_autonomous_result.json
+            fly_autonomous_readout.npy
+            agent_workspace/
+          retention-days: 1
