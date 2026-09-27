@@ -1,0 +1,42 @@
+name: Deploy Fly Brain Dashboard Pages
+
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - 'dashboard/fly-brain-live.html'
+      - '.github/workflows/deploy-fly-dashboard-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: fly-brain-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+      - name: Prepare site
+        run: |
+          mkdir -p site
+          cp dashboard/fly-brain-live.html site/index.html
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
