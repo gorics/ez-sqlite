@@ -1,0 +1,44 @@
+name: Fruit Fly v783 CSAT Symbolic V6
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - 'tools/solve_2027_9mo_v6.py'
+      - '.github/workflows/fruit-fly-suneung-symbolic-v6.yml'
+  workflow_dispatch:
+jobs:
+  symbolic-v6:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install numpy==1.26.4 scipy==1.13.1 pandas==2.2.3 pyarrow==17.0.0
+      - name: Fetch original published v783 model data
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir Drosophila_brain_model
+          cd Drosophila_brain_model
+          git init
+          git remote add origin https://github.com/philshiu/Drosophila_brain_model.git
+          git fetch --depth 1 origin 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960
+          git checkout FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "91bdd1e7dcf193f3e7ca5a8933497fcef63b7960"
+          echo "UPSTREAM_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Run routed symbolic solving benchmark
+        env:
+          DROSOPHILA_MODEL_DIR: Drosophila_brain_model
+        run: python -u tools/solve_2027_9mo_v6.py
+      - name: Print result
+        run: cat suneung_symbolic_v6_result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fly-v783-suneung-symbolic-v6-result
+          path: suneung_symbolic_v6_result.json
+          retention-days: 1
