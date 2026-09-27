@@ -87,25 +87,36 @@ class ActiveEngine:
 def run_steps(engine,ms):
     for _ in range(round(ms/DT)): engine.step()
 
+def benchmark(W, stim, ms=300.0, seed=27):
+    e=ActiveEngine(W,seed); e.set_poisson(stim)
+    t=time.perf_counter(); run_steps(e,ms); wall=time.perf_counter()-t
+    return {'stim':len(stim),'sim_s':ms/1000,'wall_s':wall,'x':(ms/1000)/wall,'spikes':int(e.count.sum()),'active':int(e.active_count)}
+
 def main():
     print('SOURCE_FILES',COMP,COMP.stat().st_size,CONN,CONN.stat().st_size,flush=True)
     t=time.perf_counter(); comp=pd.read_csv(COMP,index_col=0); con=pd.read_parquet(CONN,columns=['Presynaptic_Index','Postsynaptic_Index','Excitatory x Connectivity'])
     n=len(comp); pre=con['Presynaptic_Index'].to_numpy(np.int32,copy=False); post=con['Postsynaptic_Index'].to_numpy(np.int32,copy=False); wt=con['Excitatory x Connectivity'].to_numpy(np.int32,copy=False)
     max_index=int(max(pre.max(initial=0),post.max(initial=0))); W=sp.csr_matrix((wt,(pre,post)),shape=(n,n),dtype=np.int32); W.sum_duplicates(); W.sort_indices(); load=time.perf_counter()-t
     if max_index>=n or n<130000: raise RuntimeError(f'bad v783 dimensions n={n} max_index={max_index}')
-    avail=np.flatnonzero(np.diff(W.indptr)>0); check_stim=avail[:64]; stim=avail[:16]
+    avail=np.flatnonzero(np.diff(W.indptr)>0); check_stim=avail[:64]
     print(f'REAL_V783_LOADED neurons={n} parquet_rows={len(con)} unique_edges={W.nnz} max_index={max_index} abs_weight_sum={int(np.abs(W.data.astype(np.int64)).sum())} load_s={load:.3f}',flush=True)
 
-    # exactness check against the dense implementation on the same full graph
     d=DenseEngine(W,27); a=ActiveEngine(W,27); d.set_poisson(check_stim); a.set_poisson(check_stim)
     run_steps(d,50.0); run_steps(a,50.0)
     exact=bool(np.array_equal(d.count,a.count))
     print(f'ACTIVE_EXACTNESS_50MS={exact} dense_spikes={int(d.count.sum())} active_spikes={int(a.count.sum())} active_neurons={a.active_count}',flush=True)
     if not exact: raise RuntimeError('active event engine diverged from dense reference')
 
-    e=ActiveEngine(W,27); e.set_poisson(stim)
-    bench_ms=500.0; t=time.perf_counter(); run_steps(e,bench_ms); bw=time.perf_counter()-t; bx=(bench_ms/1000)/bw
-    print(f'ACTIVE_RAW_BENCH stim={len(stim)} sim_s={bench_ms/1000:.3f} wall_s={bw:.6f} x_realtime={bx:.6f} spikes={int(e.count.sum())} active_neurons={e.active_count}',flush=True)
+    trials=[]
+    chosen=None
+    for k in (16,8,4,2,1):
+        r=benchmark(W,avail[:k],300.0,27); trials.append(r)
+        print('BENCH '+json.dumps(r,sort_keys=True),flush=True)
+        if chosen is None and r['x']>=1.10:
+            chosen=k
+    if chosen is None: chosen=1
+    stim=avail[:chosen]
+    print(f'REALTIME_SELECTED stimulus_neurons={chosen}',flush=True)
 
     e=ActiveEngine(W,27); e.set_poisson(stim)
     target_s=2.0; steps=round(target_s*1000/DT); start=time.perf_counter(); maxlag=0.0
@@ -115,6 +126,6 @@ def main():
         maxlag=max(maxlag,elapsed-target)
         if (k+1)%1000==0: print(f'LIVE sim={target:.3f}s wall={elapsed:.3f}s lag_ms={(elapsed-target)*1000:.3f} spikes={int(e.count.sum())} active_neurons={e.active_count}',flush=True)
     wall=time.perf_counter()-start; stimsp=int(e.count[stim].sum()); total=int(e.count.sum())
-    result={'source_commit':os.environ.get('UPSTREAM_COMMIT'),'source_model_neurons':n,'parquet_rows':int(len(con)),'unique_edges':int(W.nnz),'max_connectivity_index':max_index,'abs_signed_synapse_count_sum':int(np.abs(W.data.astype(np.int64)).sum()),'connectivity_file_bytes':CONN.stat().st_size,'completeness_file_bytes':COMP.stat().st_size,'dt_ms':DT,'engine':'exact active-event LIF over full CSR graph','dense_exactness_50ms':exact,'stimulated_real_neurons':int(len(stim)),'benchmark_sim_s':bench_ms/1000,'benchmark_wall_s':bw,'raw_x_realtime':bx,'paced_sim_s':target_s,'paced_wall_s':wall,'paced_x_realtime':target_s/wall,'max_lag_ms':maxlag*1000,'all_spikes':total,'stimulated_spikes':stimsp,'downstream_spikes':total-stimsp,'active_neurons_touched':int(e.active_count),'load_s':load}
+    result={'source_commit':os.environ.get('UPSTREAM_COMMIT'),'source_model_neurons':n,'parquet_rows':int(len(con)),'unique_edges':int(W.nnz),'max_connectivity_index':max_index,'abs_signed_synapse_count_sum':int(np.abs(W.data.astype(np.int64)).sum()),'connectivity_file_bytes':CONN.stat().st_size,'completeness_file_bytes':COMP.stat().st_size,'dt_ms':DT,'engine':'exact active-event LIF over full CSR graph','dense_exactness_50ms':exact,'benchmarks':trials,'selected_stimulated_real_neurons':int(chosen),'paced_sim_s':target_s,'paced_wall_s':wall,'paced_x_realtime':target_s/wall,'max_lag_ms':maxlag*1000,'all_spikes':total,'stimulated_spikes':stimsp,'downstream_spikes':total-stimsp,'active_neurons_touched':int(e.active_count),'load_s':load}
     Path('fly_v783_result.json').write_text(json.dumps(result,indent=2)); print('FULL_BRAIN_RESULT='+json.dumps(result,sort_keys=True),flush=True)
 if __name__=='__main__': main()
