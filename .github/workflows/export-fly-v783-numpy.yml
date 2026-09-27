@@ -1,0 +1,61 @@
+name: Export Fly v783 NumPy
+
+on:
+  push:
+    branches: [fruit-fly-v783-run]
+    paths:
+      - '.github/workflows/export-fly-v783-numpy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-numpy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fruit-fly-v783-run
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install converter deps
+        run: pip install numpy==1.26.4 pandas==2.2.3 pyarrow==17.0.0
+      - name: Fetch pinned model and convert
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/philshiu/Drosophila_brain_model.git upstream
+          cd upstream
+          git fetch --depth 1 origin 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960
+          git checkout 91bdd1e7dcf193f3e7ca5a8933497fcef63b7960 -- Completeness_783.csv Connectivity_783.parquet model.py
+          cd ..
+          python - <<'PY'
+          import json, numpy as np, pandas as pd
+          con=pd.read_parquet('upstream/Connectivity_783.parquet',columns=['Presynaptic_Index','Postsynaptic_Index','Excitatory x Connectivity'])
+          n=len(pd.read_csv('upstream/Completeness_783.csv',index_col=0))
+          pre=con['Presynaptic_Index'].to_numpy(np.int32,copy=False)
+          post=con['Postsynaptic_Index'].to_numpy(np.int32,copy=False)
+          wt=con['Excitatory x Connectivity'].to_numpy(np.int32,copy=False)
+          np.save('pre.npy',pre); np.save('post.npy',post); np.save('wt.npy',wt)
+          meta={'neurons':n,'rows':int(len(con)),'pre_max':int(pre.max()),'post_max':int(post.max()),'abs_weight_sum':int(np.abs(wt.astype(np.int64)).sum()),'source_commit':'91bdd1e7dcf193f3e7ca5a8933497fcef63b7960'}
+          open('meta.json','w').write(json.dumps(meta,indent=2))
+          print(meta)
+          PY
+          sha256sum pre.npy post.npy wt.npy meta.json upstream/Completeness_783.csv upstream/model.py > SHA256SUMS_NUMPY.txt
+          ls -lh pre.npy post.npy wt.npy meta.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fly-v783-numpy
+          path: |
+            pre.npy
+            post.npy
+            wt.npy
+            meta.json
+            SHA256SUMS_NUMPY.txt
+            upstream/Completeness_783.csv
+            upstream/model.py
+          compression-level: 1
+          retention-days: 1
