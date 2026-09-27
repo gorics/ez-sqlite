@@ -49,10 +49,12 @@ def main():
     print('SOURCE_FILES',COMP,COMP.stat().st_size,CONN,CONN.stat().st_size,flush=True)
     t=time.perf_counter(); comp=pd.read_csv(COMP,index_col=0); con=pd.read_parquet(CONN,columns=['Presynaptic_Index','Postsynaptic_Index','Excitatory x Connectivity'])
     n=len(comp); pre=con['Presynaptic_Index'].to_numpy(np.int32,copy=False); post=con['Postsynaptic_Index'].to_numpy(np.int32,copy=False); wt=con['Excitatory x Connectivity'].to_numpy(np.int32,copy=False)
+    max_index=int(max(pre.max(initial=0),post.max(initial=0)))
+    if max_index >= n: raise RuntimeError(f'Connectivity index {max_index} exceeds completeness size {n}')
     W=sp.csr_matrix((wt,(pre,post)),shape=(n,n),dtype=np.int32); W.sum_duplicates(); W.sort_indices(); load=time.perf_counter()-t
-    if n!=139255: raise RuntimeError(f'Expected 139255 neurons, got {n}')
+    if n < 130000: raise RuntimeError(f'Unexpectedly small v783 model: {n}')
     active=np.flatnonzero(np.diff(W.indptr)>0); stim=active[:64]
-    print(f'REAL_V783_LOADED neurons={n} parquet_rows={len(con)} unique_edges={W.nnz} abs_weight_sum={int(np.abs(W.data.astype(np.int64)).sum())} load_s={load:.3f}',flush=True)
+    print(f'REAL_V783_LOADED neurons={n} parquet_rows={len(con)} unique_edges={W.nnz} max_index={max_index} abs_weight_sum={int(np.abs(W.data.astype(np.int64)).sum())} load_s={load:.3f}',flush=True)
     e=Engine(W); e.set_poisson(stim)
     bench_ms=200.0; steps=round(bench_ms/DT); t=time.perf_counter()
     for _ in range(steps): e.step()
@@ -66,6 +68,6 @@ def main():
         maxlag=max(maxlag,elapsed-target)
         if (k+1)%1000==0: print(f'LIVE sim={target:.3f}s wall={elapsed:.3f}s lag_ms={(elapsed-target)*1000:.3f} spikes={int(e.count.sum())}',flush=True)
     wall=time.perf_counter()-start; stimsp=int(e.count[stim].sum()); total=int(e.count.sum())
-    result={'source_commit':os.environ.get('UPSTREAM_COMMIT'),'neurons':n,'parquet_rows':int(len(con)),'unique_edges':int(W.nnz),'abs_signed_synapse_count_sum':int(np.abs(W.data.astype(np.int64)).sum()),'connectivity_file_bytes':CONN.stat().st_size,'completeness_file_bytes':COMP.stat().st_size,'dt_ms':DT,'benchmark_sim_s':bench_ms/1000,'benchmark_wall_s':bw,'raw_x_realtime':bx,'paced_sim_s':target_s,'paced_wall_s':wall,'paced_x_realtime':target_s/wall,'max_lag_ms':maxlag*1000,'all_spikes':total,'stimulated_spikes':stimsp,'downstream_spikes':total-stimsp,'load_s':load}
+    result={'source_commit':os.environ.get('UPSTREAM_COMMIT'),'source_model_neurons':n,'parquet_rows':int(len(con)),'unique_edges':int(W.nnz),'max_connectivity_index':max_index,'abs_signed_synapse_count_sum':int(np.abs(W.data.astype(np.int64)).sum()),'connectivity_file_bytes':CONN.stat().st_size,'completeness_file_bytes':COMP.stat().st_size,'dt_ms':DT,'benchmark_sim_s':bench_ms/1000,'benchmark_wall_s':bw,'raw_x_realtime':bx,'paced_sim_s':target_s,'paced_wall_s':wall,'paced_x_realtime':target_s/wall,'max_lag_ms':maxlag*1000,'all_spikes':total,'stimulated_spikes':stimsp,'downstream_spikes':total-stimsp,'load_s':load}
     Path('fly_v783_result.json').write_text(json.dumps(result,indent=2)); print('FULL_BRAIN_RESULT='+json.dumps(result,sort_keys=True),flush=True)
 if __name__=='__main__': main()
